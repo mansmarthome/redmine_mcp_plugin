@@ -19,12 +19,22 @@ module RedmineMcpPlugin
       # Permissions the HTTP gate should challenge for. create_issue_tags is
       # added only when a name is not already visible to the user, matching the
       # plugin's edit-versus-create split.
-      def permissions_for(names, mode)
+      def permissions_for(names, mode, user = User.current)
         permissions = [:edit_issue_tags]
         return permissions if mode == 'remove' || names.empty?
-        return permissions if Issue.allowed_tags?(names)
+        return permissions if known_tags?(names, user)
 
         permissions << :create_issue_tags
+      end
+
+      # additional_tags defines Issue#tags_allowed_for? only in newer releases.
+      # Older hosts still expose tag_list, so the same rule is applied here when
+      # the method is absent: editing allows existing tags, creating allows new ones.
+      def allowed?(issue, user, tag_names)
+        return issue.tags_allowed_for?(user, tag_names) if issue.respond_to?(:tags_allowed_for?)
+
+        user.allowed_to?(:edit_issue_tags, issue.project) &&
+          (tag_names.empty? || user.allowed_to?(:create_issue_tags, issue.project) || known_tags?(tag_names, user))
       end
 
       def apply!(issue, names, mode, user)
@@ -39,7 +49,7 @@ module RedmineMcpPlugin
           end
 
         checked = mode == 'append' ? names : updated.to_a
-        unless mode == 'remove' || issue.tags_allowed_for?(user, checked)
+        unless mode == 'remove' || allowed?(issue, user, checked)
           raise RedmineMcpPlugin::ToolError, 'You do not have permission to do that'
         end
 
@@ -53,6 +63,18 @@ module RedmineMcpPlugin
 
         issue.reload
         names(issue)
+      end
+
+      def known_tags?(names, user)
+        if Issue.respond_to?(:allowed_tags?)
+          method = Issue.method(:allowed_tags?)
+          # Older additional_tags takes only the names; newer releases add user:.
+          return method.parameters.any? { |_type, name| name == :user } ? method.call(names, user: user) : method.call(names)
+        end
+        return false unless Issue.respond_to?(:available_tags)
+
+        known = Issue.available_tags(user: user).map(&:name)
+        names.all? { |name| known.include?(name) }
       end
 
       def journal!(issue, before, after)

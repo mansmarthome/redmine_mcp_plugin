@@ -98,6 +98,13 @@ class RedmineMcpPluginIntegrationsTest < ActiveSupport::TestCase
     assert_not RedmineMcpPlugin::Tools::UpdateIssueTags.available_to?(user, oauth_scopes: nil)
   end
 
+  def test_tag_permission_check_does_not_require_tags_allowed_for
+    issue = Issue.new(project: Project.find(1))
+    user = User.find(1)
+
+    assert_includes [true, false], RedmineMcpPlugin::Integrations::IssueTags.allowed?(issue, user, %w[First])
+  end
+
   def test_unrelated_journal_details_are_not_hidden
     detail = Struct.new(:property, :prop_key).new('attr', 'status_id')
     assert_not Integrations.hide_journal_detail?(Issue.find(1), detail, User.find(1))

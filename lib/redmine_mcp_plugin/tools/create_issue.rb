@@ -140,7 +140,7 @@ module RedmineMcpPlugin
 
         authorize!(:edit_issue_tags, project)
         names = Integrations::IssueTags.normalize(arguments['tags'])
-        unless issue.tags_allowed_for?(user, names)
+        unless Integrations::IssueTags.allowed?(issue, user, names)
           raise ToolError, 'You do not have permission to do that'
         end
 
