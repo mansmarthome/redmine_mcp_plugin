@@ -108,11 +108,15 @@ plugin publishes protected-resource and authorization-server metadata at:
 
 The protected-resource metadata and the `/mcp` authentication challenge advertise
 `view_issues view_project view_wiki_pages view_issue_watchers view_time_entries view_private_notes`
-as the read bootstrap scopes for an initial client handshake. When read-only mode
+as the read bootstrap scopes for an initial client handshake. When RedmineUP
+Checklists or additional_tags issue tags are available, that handshake also
+advertises `view_checklists` or `view_issue_tags`. When read-only mode
 is off, they also advertise the write scopes
 (`add_issues add_issue_notes manage_versions edit_wiki_pages set_notes_private`),
 so clients that never act on a step-up challenge, such as claude.ai connectors,
-still receive a write-capable token. Private-note scopes are included because
+still receive a write-capable token. Loaded checklist and tag write tools add
+their permissions to that set, and `create_issue_tags` is included when issue
+tags are enabled. Private-note scopes are included because
 private notes are routine team discussion; the user's role still decides what
 they can see or set. `admin` is requested only through a step-up challenge.
 The OAuth application must allow every advertised scope: Doorkeeper rejects an
@@ -150,8 +154,21 @@ token scopes; tools denied by the user's role remain hidden.
 | Create an issue | `create_issue` | `add_issues`; read-only mode must be disabled |
 | Add an issue note | `add_issue_note` | `add_issue_notes`; private notes also require `set_notes_private`; read-only mode must be disabled |
 
+Checklist and tag tools are omitted from `tools/list` unless the host has that
+plugin installed and, for tags, issue tags enabled. They are not plugin
+requirements. `get_issue` includes `checklists` or `tags` only for a caller who
+may view them; `search_issues` adds a tag filter and a checklist done/total
+summary on the same condition. `create_issue` accepts `checklists` and `tags`
+only while the matching plugin is present.
+
+| Optional capability | Tools | Required permission |
+|---|---|---|
+| RedmineUP Checklists | `update_issue_checklists`, `set_checklist_done` | `edit_checklists` to add, edit, reorder, or remove; `done_checklists` to mark an item done. Reading requires `view_checklists`. |
+| additional_tags issue tags | `list_issue_tags`, `update_issue_tags` | `view_issue_tags` to list or read; `edit_issue_tags` to change them; `create_issue_tags` for a name that does not already exist. |
+
 Tool arguments are validated against their declared schemas. The paginated
-tools (`list_projects`, `search_issues`, `list_wiki_pages`, and `list_users`)
+tools (`list_projects`, `search_issues`, `list_wiki_pages`, `list_users`, and
+`list_issue_tags` when issue tags are enabled)
 support `limit` and `offset`, report pagination metadata, and cap each page at
 the configured maximum (100 by default, with an absolute maximum of 1000).
 

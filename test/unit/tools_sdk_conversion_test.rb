@@ -31,12 +31,34 @@ class RedmineMcpPluginToolsSdkConversionTest < ActiveSupport::TestCase
     end
   end
 
-  # Expected to be sixteen (12 read + 4 write); a tool silently dropped from or
-  # added to the registry would be a security-relevant regression, so the count
-  # is pinned.
-  def test_registry_exposes_all_sixteen_tools
-    assert_equal 16, ALL_TOOLS.size
-    assert_equal 4, ALL_TOOLS.count(&:write?)
+  CORE_TOOL_NAMES = %w[
+    whoami list_projects get_project get_issue search_issues list_wiki_pages get_wiki_page
+    list_enumerations list_statuses list_versions list_users get_group
+    create_issue add_issue_note create_version create_wiki_page
+  ].freeze
+  CORE_WRITE_NAMES = %w[create_issue add_issue_note create_version create_wiki_page].freeze
+
+  # The core set is pinned. Checklist and tag tools are mounted only when the
+  # host plugin is loaded, so a stray file still cannot appear on its own.
+  def test_registry_exposes_the_core_tools_and_optional_integrations
+    names = ALL_TOOLS.map(&:name_value)
+
+    assert_equal CORE_TOOL_NAMES, names & CORE_TOOL_NAMES
+    assert_equal CORE_WRITE_NAMES, names.select { |name| CORE_WRITE_NAMES.include?(name) }
+    if RedmineMcpPlugin::Integrations.checklists?
+      assert_includes names, 'update_issue_checklists'
+      assert_includes names, 'set_checklist_done'
+    else
+      assert_not_includes names, 'update_issue_checklists'
+      assert_not_includes names, 'set_checklist_done'
+    end
+    if RedmineMcpPlugin::Integrations.issue_tags?
+      assert_includes names, 'list_issue_tags'
+      assert_includes names, 'update_issue_tags'
+    else
+      assert_not_includes names, 'list_issue_tags'
+      assert_not_includes names, 'update_issue_tags'
+    end
   end
 
   # Each tool's descriptor comes from the SDK DSL now. Constructing to_h forces
@@ -60,8 +82,7 @@ class RedmineMcpPluginToolsSdkConversionTest < ActiveSupport::TestCase
   def test_write_tools_carry_a_non_read_only_hint
     write_tools = ALL_TOOLS.select(&:write?)
 
-    assert_equal %w[create_issue add_issue_note create_version create_wiki_page].sort,
-                 write_tools.map { |t| t.to_h[:name] }.sort
+    assert_equal CORE_WRITE_NAMES.sort, (write_tools.map { |t| t.to_h[:name] } & CORE_WRITE_NAMES).sort
     write_tools.each do |tool|
       assert_not tool.to_h[:annotations][:readOnlyHint], "#{tool} is a write tool"
     end

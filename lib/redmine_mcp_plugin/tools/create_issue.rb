@@ -6,6 +6,58 @@ module RedmineMcpPlugin
       tool_name 'create_issue'
       title 'Create issue'
       description 'Create a new issue in a project.'
+
+      def self.description_value
+        notes = []
+        notes << 'Accepts checklists when checklists are installed; that requires edit_checklists.' if Integrations.checklists?
+        if Integrations.issue_tags?
+          notes << 'Accepts tags when issue tags are enabled; that requires edit_issue_tags, and create_issue_tags for a new name.'
+        end
+        notes.empty? ? super : "#{super} #{notes.join(' ')}"
+      end
+
+      def self.optional_input_properties
+        properties = {}
+        if Integrations.checklists?
+          properties['checklists'] = {
+            'type' => 'array',
+            'description' => 'Checklist items to add. Requires edit_checklists. subject is required on every item.',
+            'items' => {
+              'type' => 'object',
+              'properties' => {
+                'subject' => { 'type' => 'string' },
+                'is_done' => { 'type' => 'boolean' },
+                'is_section' => { 'type' => 'boolean' },
+                'position' => { 'type' => 'integer', 'minimum' => 1 }
+              },
+              'required' => %w[subject],
+              'additionalProperties' => false
+            }
+          }
+        end
+        if Integrations.issue_tags?
+          properties['tags'] = {
+            'type' => 'array',
+            'items' => { 'type' => 'string' },
+            'description' => 'Tags to set. Each entry is one tag. Requires edit_issue_tags; a new name also requires create_issue_tags.'
+          }
+        end
+        properties
+      end
+
+      def self.required_permissions(arguments = {})
+        permissions = super
+        if Integrations.checklists? && Array(arguments['checklists']).any?
+          permissions << :edit_checklists
+        end
+        if Integrations.issue_tags? && arguments.key?('tags')
+          permissions.concat(
+            Integrations::IssueTags.permissions_for(Integrations::IssueTags.normalize(arguments['tags']), 'replace')
+          )
+        end
+        permissions.uniq
+      end
+
       permission :add_issues
       write true
       input_schema(
@@ -55,10 +107,44 @@ module RedmineMcpPlugin
         end
 
         issue.safe_attributes = attributes
+        assign_checklists(issue, project, arguments)
+        assign_tags(issue, project, arguments)
         raise ToolError, "Could not create issue: #{issue.errors.full_messages.join('; ')}" unless issue.save
 
-        { id: issue.id, subject: issue.subject, project_identifier: project.identifier,
-          status: issue.status&.name, tracker: issue.tracker&.name, created_on: iso(issue.created_on) }
+        if Integrations.checklists? && Array(arguments['checklists']).any?
+          Integrations::Checklists.recalc!(issue)
+          Integrations::Checklists.record_journal(issue, [], user)
+        end
+        issue.reload
+
+        payload = { id: issue.id, subject: issue.subject, project_identifier: project.identifier,
+                    status: issue.status&.name, tracker: issue.tracker&.name, created_on: iso(issue.created_on) }
+        if Integrations.checklists? && arguments.key?('checklists') && user.allowed_to?(:view_checklists, project)
+          payload[:checklists] = Integrations::Checklists.payload(issue)
+        end
+        if Integrations.issue_tags? && arguments.key?('tags') && user.allowed_to?(:view_issue_tags, project)
+          payload[:tags] = Integrations::IssueTags.names(issue)
+        end
+        payload
+      end
+
+      def assign_checklists(issue, project, arguments)
+        return unless Integrations.checklists? && Array(arguments['checklists']).any?
+
+        authorize!(:edit_checklists, project)
+        Integrations::Checklists.assign!(issue, arguments['checklists'], user)
+      end
+
+      def assign_tags(issue, project, arguments)
+        return unless Integrations.issue_tags? && arguments.key?('tags')
+
+        authorize!(:edit_issue_tags, project)
+        names = Integrations::IssueTags.normalize(arguments['tags'])
+        unless issue.tags_allowed_for?(user, names)
+          raise ToolError, 'You do not have permission to do that'
+        end
+
+        issue.tag_list = AdditionalTags::TagList.new(*names)
       end
     end
   end

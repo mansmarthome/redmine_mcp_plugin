@@ -82,15 +82,15 @@ class RedmineMcpPluginScopeChallengeTest < ActiveSupport::TestCase
 
   def test_initial_scopes_are_the_read_bootstrap_in_read_only_mode
     with_mcp_settings('read_only' => '1') do
-      assert_equal RedmineMcpPlugin::OAUTH_BOOTSTRAP_SCOPES, Challenge.initial_scopes
+      assert_equal expected_read_scopes, Challenge.initial_scopes
+      assert_equal RedmineMcpPlugin::OAUTH_BOOTSTRAP_SCOPES,
+                   Challenge.initial_scopes.first(RedmineMcpPlugin::OAUTH_BOOTSTRAP_SCOPES.length)
     end
   end
 
   def test_initial_scopes_add_write_tool_scopes_when_writes_are_enabled
     with_mcp_settings('read_only' => '0') do
-      assert_equal RedmineMcpPlugin::OAUTH_BOOTSTRAP_SCOPES +
-                     %w[add_issues add_issue_notes manage_versions edit_wiki_pages set_notes_private],
-                   Challenge.initial_scopes
+      assert_equal expected_write_scopes, Challenge.initial_scopes
     end
   end
 
@@ -118,6 +118,25 @@ class RedmineMcpPluginScopeChallengeTest < ActiveSupport::TestCase
   end
 
   private
+
+  def expected_read_scopes
+    scopes = RedmineMcpPlugin::OAUTH_BOOTSTRAP_SCOPES.dup
+    scopes << 'view_checklists' if RedmineMcpPlugin::Integrations.checklists?
+    scopes << 'view_issue_tags' if RedmineMcpPlugin::Integrations.issue_tags?
+    scopes
+  end
+
+  def expected_write_scopes
+    scopes = expected_read_scopes + %w[add_issues add_issue_notes manage_versions edit_wiki_pages]
+    if RedmineMcpPlugin::Integrations.checklists?
+      scopes << 'edit_checklists'
+      scopes << 'done_checklists'
+    end
+    scopes << 'edit_issue_tags' if RedmineMcpPlugin::Integrations.issue_tags?
+    scopes << 'set_notes_private'
+    scopes << 'create_issue_tags' if RedmineMcpPlugin::Integrations.issue_tags?
+    scopes
+  end
 
   def with_mcp_settings(overrides)
     Setting.plugin_redmine_mcp_plugin = RedmineMcpPlugin::Settings::DEFAULTS.merge(overrides)

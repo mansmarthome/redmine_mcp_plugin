@@ -162,6 +162,26 @@ module RedmineMcpPlugin
           hash.merge(inputSchema: hash[:inputSchema].merge(properties: edited))
         end
 
+        # Extra input properties merged into the declared schema when a host
+        # plugin is present. Empty unless a tool opts in, so a missing plugin
+        # leaves both tools/list and argument validation unchanged.
+        def input_schema_value
+          base = super
+          extras = optional_input_properties
+          return base if extras.blank?
+
+          raw = base.to_h
+          properties = raw.fetch(:properties, {}).dup
+          extras.each do |name, spec|
+            properties[name.to_sym] = spec.deep_symbolize_keys
+          end
+          MCP::Tool::InputSchema.new(raw.merge(properties: properties))
+        end
+
+        def optional_input_properties
+          {}
+        end
+
         private
 
         def default_annotations

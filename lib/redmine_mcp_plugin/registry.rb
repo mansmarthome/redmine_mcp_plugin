@@ -22,8 +22,26 @@ module RedmineMcpPlugin
           Tools::CreateIssue,
           Tools::AddIssueNote,
           Tools::CreateVersion,
-          Tools::CreateWikiPage
+          Tools::CreateWikiPage,
+          *optional
         ]
+      end
+
+      private
+
+      # Host plugins are not requirements. Their tools stay out of tools/list
+      # and tools/call unless the plugin is loaded and its feature is enabled.
+      def optional
+        tools = []
+        if Integrations.checklists?
+          tools << Tools::UpdateIssueChecklists
+          tools << Tools::SetChecklistDone
+        end
+        if Integrations.issue_tags?
+          tools << Tools::ListIssueTags
+          tools << Tools::UpdateIssueTags
+        end
+        tools
       end
     end
   end

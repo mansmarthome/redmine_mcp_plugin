@@ -16,7 +16,7 @@ Repository-wide conventions and host-backed commands remain in
 | Credential selection and Redmine user resolution | [`Authenticator`](../lib/redmine_mcp_plugin/authenticator.rb) | Controller test at the authentication boundary |
 | Supported revisions and response metadata | SDK `MCP::Server`, configured by [`McpServer`](../lib/redmine_mcp_plugin/mcp_server.rb), plus controller transport-version validation | `test/unit/mcp_server_test.rb` plus controller coverage when HTTP behavior changes |
 | MCP methods, SDK dispatch, and post-parse JSON-RPC error mapping | SDK `MCP::Server`, configured by [`McpServer`](../lib/redmine_mcp_plugin/mcp_server.rb) | Controller request exercising the public response |
-| Exposed tool set | [`Registry.all`](../lib/redmine_mcp_plugin/registry.rb), filtered in the controller by `Tools::Base.available_to?` | `tools/list` and `tools/call` controller tests |
+| Exposed tool set | [`Registry.all`](../lib/redmine_mcp_plugin/registry.rb), filtered in the controller by `Tools::Base.available_to?`. Checklist and tag tools are appended only when [`Integrations`](../lib/redmine_mcp_plugin/integrations.rb) detects the host plugin. | `tools/list` and `tools/call` controller tests |
 | Shared permission, read-only, pagination, and lookup behavior | [`Tools::Base`](../lib/redmine_mcp_plugin/tools/base.rb) | Focused unit test and affected public tool call |
 | Accepted argument shapes | `MCP::Tool` input schema on each tool | Affected SDK-backed tool call |
 | Redmine queries and result serialization | The class under [`lib/redmine_mcp_plugin/tools/`](../lib/redmine_mcp_plugin/tools/) | Functional test using Redmine fixtures and visibility rules |

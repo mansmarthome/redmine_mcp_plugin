@@ -7,6 +7,17 @@ module RedmineMcpPlugin
       title 'Get issue'
       description 'Fetch one issue by id, with its fields and optionally its notes, history, ' \
                   'relations, children, watchers, attachment metadata and spent hours.'
+
+      def self.description_value
+        notes = []
+        if Integrations.checklists?
+          notes << 'Includes checklists when the caller may view them.'
+        end
+        if Integrations.issue_tags?
+          notes << 'Includes tags when the caller may view them.'
+        end
+        notes.empty? ? super : "#{super} #{notes.join(' ')}"
+      end
       permission :view_issues
       input_schema(
         'type' => 'object',
@@ -79,6 +90,7 @@ module RedmineMcpPlugin
           attachments_count: issue.attachments.size,
           custom_fields: visible_custom_fields(issue)
         }
+        attach_optional_fields(issue, payload)
 
         payload[:journals]    = journals_for(issue) if arguments.fetch('include_journals', true)
         payload[:relations]   = relations_for(issue) if arguments['include_relations'] == true
@@ -130,7 +142,7 @@ module RedmineMcpPlugin
             notes: journal.notes.presence,
             private_notes: journal.private_notes?,
             created_on: iso(journal.created_on),
-            details: journal.visible_details(user).map { |detail| detail_json(detail) }
+            details: journal.visible_details(user).filter_map { |detail| detail_json(issue, detail) }
           }
         end
       end
@@ -138,7 +150,23 @@ module RedmineMcpPlugin
       # Resolve status and assignee transitions to typed values so a model can
       # reconstruct ownership and status history without re-resolving numeric
       # ids; every other detail keeps its raw before/after string.
-      def detail_json(detail)
+      def attach_optional_fields(issue, payload)
+        if Integrations.checklists? && user.allowed_to?(:view_checklists, issue.project)
+          payload[:checklists] = Integrations::Checklists.payload(issue)
+        end
+        if Integrations.issue_tags? && user.allowed_to?(:view_issue_tags, issue.project)
+          payload[:tags] = Integrations::IssueTags.names(issue)
+        end
+        payload
+      end
+
+      def detail_json(issue, detail)
+        return if Integrations.hide_journal_detail?(issue, detail, user)
+
+        detail_body(detail)
+      end
+
+      def detail_body(detail)
         base = { property: detail.property, name: detail.prop_key }
         if detail.property == 'attr' && detail.prop_key == 'status_id'
           base.merge(old_value: status_by_id(detail.old_value), new_value: status_by_id(detail.value))

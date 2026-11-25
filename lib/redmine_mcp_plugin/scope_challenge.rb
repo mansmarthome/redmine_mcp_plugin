@@ -21,13 +21,22 @@ module RedmineMcpPlugin
       view_issue_watchers: :read,
       view_time_entries: :read,
       view_private_notes: :read,
+      # Declared even when the host plugin is absent, so a challenge cannot
+      # fail open if the tool is mounted. They are requested only when the
+      # integration is active.
+      view_checklists: :read,
+      view_issue_tags: :read,
 
       admin: :write,
       add_issues: :write,
       add_issue_notes: :write,
       set_notes_private: :write,
       manage_versions: :write,
-      edit_wiki_pages: :write
+      edit_wiki_pages: :write,
+      edit_checklists: :write,
+      done_checklists: :write,
+      edit_issue_tags: :write,
+      create_issue_tags: :write
     }.freeze
 
     # One-hop, directional correlations added to a challenge so a step-up also
@@ -47,6 +56,8 @@ module RedmineMcpPlugin
       view_wiki_pages: %i[view_project].freeze,
       view_issue_watchers: %i[view_issues view_project].freeze,
       view_time_entries: %i[view_issues view_project].freeze,
+      view_checklists: %i[view_issues view_project].freeze,
+      view_issue_tags: %i[view_issues view_project].freeze,
 
       add_issues: %i[add_issue_notes].freeze,
       manage_versions: %i[edit_wiki_pages].freeze
@@ -61,6 +72,21 @@ module RedmineMcpPlugin
 
     module_function
 
+    # Core bootstrap plus the read scopes of optional integrations that are
+    # actually loaded. A missing checklist or tags plugin adds nothing.
+    def read_scopes
+      scopes = OAUTH_BOOTSTRAP_SCOPES.dup
+      scopes << 'view_checklists' if Integrations.checklists?
+      scopes << 'view_issue_tags' if Integrations.issue_tags?
+      scopes
+    end
+
+    def initial_write_extras
+      extras = INITIAL_WRITE_EXTRAS.dup
+      extras << :create_issue_tags if Integrations.issue_tags?
+      extras
+    end
+
     # Scopes a client should request when it first authorizes, advertised in the
     # 401 challenge and in protected-resource metadata. Read-only mode keeps the
     # read bootstrap set. With writes enabled, each registered write tool's base
@@ -69,15 +95,15 @@ module RedmineMcpPlugin
     # re-authorizing, and every reconnect would then request the read set again.
     # INITIAL_WRITE_EXTRAS join them; `admin` stays step-up only.
     def initial_scopes
-      return OAUTH_BOOTSTRAP_SCOPES if Settings.read_only?
+      return read_scopes if Settings.read_only?
 
       write_scopes = Registry.all.select(&:write?).filter_map(&:mcp_permission).map(&:to_sym)
-      write_scopes = (write_scopes + INITIAL_WRITE_EXTRAS).uniq
+      write_scopes = (write_scopes + initial_write_extras).uniq
       write_scopes.each do |scope|
         # Fail closed, as challenge_scopes does: only declared write-tier scopes.
         raise ArgumentError, "#{scope} is not a declared write scope" unless SCOPE_TIERS.fetch(scope) == :write
       end
-      OAUTH_BOOTSTRAP_SCOPES + write_scopes.map(&:to_s)
+      read_scopes + write_scopes.map(&:to_s)
     end
 
     def header(permissions:, write:, resource_metadata:)

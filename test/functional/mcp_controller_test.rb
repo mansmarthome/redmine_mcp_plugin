@@ -7,12 +7,13 @@ class McpControllerTest < Redmine::ControllerTest
   fixtures :projects, :users, :email_addresses, :roles, :members, :member_roles,
            :issues, :issue_statuses, :trackers, :enumerations, :enabled_modules
 
-  # The bootstrap challenge advertises OAUTH_BOOTSTRAP_SCOPES: the three core read
-  # scopes, the two read satellites (watchers, time entries) that ticket 07 folds
-  # into bootstrap, and view_private_notes. No write scope.
-  OAUTH_CHALLENGE =
+  # The bootstrap challenge advertises ScopeChallenge.initial_scopes: the core
+  # read scopes, plus checklist or tag read scopes when those plugins are loaded.
+  # No write scope while read-only mode is on.
+  def oauth_challenge
     'Bearer realm="Redmine", resource_metadata="http://test.host/.well-known/oauth-protected-resource/mcp", ' \
-    'scope="view_issues view_project view_wiki_pages view_issue_watchers view_time_entries view_private_notes"'
+      "scope=\"#{RedmineMcpPlugin::ScopeChallenge.initial_scopes.join(' ')}\""
+  end
 
   def setup
     Setting.rest_api_enabled = '1'
@@ -75,14 +76,16 @@ class McpControllerTest < Redmine::ControllerTest
     post_mcp rpc('tools/list')
 
     assert_response :unauthorized
-    assert_equal OAUTH_CHALLENGE, response.headers['WWW-Authenticate']
+    assert_equal oauth_challenge, response.headers['WWW-Authenticate']
   end
 
   def test_invalid_oauth_token_challenge_includes_minimal_bootstrap_scopes
     post_mcp rpc('tools/list'), 'Authorization' => 'Bearer invalid-token'
 
     assert_response :unauthorized
-    assert_equal OAUTH_CHALLENGE, response.headers['WWW-Authenticate']
+    assert_equal oauth_challenge, response.headers['WWW-Authenticate']
+    assert_includes response.headers['WWW-Authenticate'], 'view_issues'
+    assert_not_includes response.headers['WWW-Authenticate'], 'add_issues'
   end
 
   def test_write_mode_challenge_includes_write_tool_scopes
@@ -90,9 +93,10 @@ class McpControllerTest < Redmine::ControllerTest
     post_mcp rpc('tools/list')
 
     assert_response :unauthorized
-    assert_equal 'view_issues view_project view_wiki_pages view_issue_watchers view_time_entries view_private_notes ' \
-                 'add_issues add_issue_notes manage_versions edit_wiki_pages set_notes_private',
+    assert_equal RedmineMcpPlugin::ScopeChallenge.initial_scopes.join(' '),
                  response.headers['WWW-Authenticate'][/scope="([^"]*)"/, 1]
+    assert_includes response.headers['WWW-Authenticate'], 'add_issues'
+    assert_not_includes response.headers['WWW-Authenticate'], 'admin'
   end
 
   def test_invalid_api_key_is_rejected

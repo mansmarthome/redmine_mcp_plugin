@@ -7,6 +7,45 @@ module RedmineMcpPlugin
       title 'Search issues'
       description 'Search issues visible to the authenticated user. All filters are optional ' \
                   'and are combined with AND. Returns newest-updated first.'
+
+      def self.description_value
+        note = if Integrations.issue_tags?
+                 ' When issue tags are enabled, tags filters the result and each row includes tags the caller may view.'
+               else
+                 ''
+               end
+        checklist = if Integrations.checklists?
+                      ' Each row includes a checklist done/total summary when the caller may view checklists.'
+                    else
+                      ''
+                    end
+        "#{super}#{note}#{checklist}"
+      end
+
+      def self.optional_input_properties
+        return {} unless Integrations.issue_tags?
+
+        {
+          'tags' => {
+            'type' => 'array',
+            'items' => { 'type' => 'string' },
+            'description' => 'Only issues carrying these tags. Requires view_issue_tags.'
+          },
+          'tags_match' => {
+            'type' => 'string',
+            'enum' => %w[all any],
+            'description' => 'Whether every tag is required (all, the default) or any one tag is enough.'
+          }
+        }
+      end
+
+      def self.required_permissions(arguments = {})
+        permissions = super
+        if Integrations.issue_tags? && Array(arguments['tags']).any?
+          permissions << :view_issue_tags
+        end
+        permissions
+      end
       permission :view_issues
       input_schema(
         'type' => 'object',
@@ -42,11 +81,14 @@ module RedmineMcpPlugin
       def perform(arguments)
         scope = Issue.visible(user)
                      .includes(:project, :tracker, :status, :priority, :author, :assigned_to, :category, :fixed_version)
+        scope = scope.preload(:checklists) if Integrations.checklists?
+        scope = scope.preload(:tags) if Integrations.issue_tags?
 
         if (identifier = arguments['project'].presence)
           project = fetch_project(identifier)
           # .visible filters by role but not by a narrowed OAuth scope.
           authorize!(:view_issues, project)
+          authorize!(:view_issue_tags, project) if Integrations.issue_tags? && Array(arguments['tags']).any?
           scope = scope.where(project_id: project.id)
         end
 
@@ -73,6 +115,7 @@ module RedmineMcpPlugin
         scope = scope.where(fixed_version_id: arguments['fixed_version_id'].to_i) if arguments['fixed_version_id'].present?
         scope = scope.where(author_id: arguments['author_id'].to_i) if arguments['author_id'].present?
         scope = scope.where(category_id: arguments['category_id'].to_i) if arguments['category_id'].present?
+        scope = tagged(scope, arguments) if Integrations.issue_tags? && Array(arguments['tags']).any?
 
         if (since = arguments['updated_since'].presence)
           scope = scope.where('issues.updated_on >= ?', parse_date(since, 'updated_since').beginning_of_day)
@@ -109,7 +152,7 @@ module RedmineMcpPlugin
       end
 
       def summarise(issue)
-        {
+        row = {
           id: issue.id,
           subject: issue.subject,
           project: issue.project&.name,
@@ -125,6 +168,22 @@ module RedmineMcpPlugin
           created_on: iso(issue.created_on),
           updated_on: iso(issue.updated_on)
         }
+        if Integrations.checklists? && user.allowed_to?(:view_checklists, issue.project)
+          row[:checklists] = Integrations::Checklists.summary(issue)
+        end
+        if Integrations.issue_tags? && user.allowed_to?(:view_issue_tags, issue.project)
+          row[:tags] = Integrations::IssueTags.names(issue)
+        end
+        row
+      end
+
+      def tagged(scope, arguments)
+        names = Integrations::IssueTags.normalize(arguments['tags'])
+        return scope if names.empty?
+
+        any = arguments['tags_match'].to_s == 'any'
+        scope.where(project_id: Project.allowed_to(user, :view_issue_tags).select(:id))
+             .tagged_with(names, any: any)
       end
     end
   end

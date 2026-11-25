@@ -259,6 +259,26 @@ Do not recreate SDK-owned envelopes or codes in plugin code. `JsonRpc` is limite
 to errors that must be returned before `MCP::Server#handle` can safely run and to
 recognizing notifications at the HTTP boundary.
 
+## Optional issue integrations
+
+Checklist and tag support is detected at request time and is not a plugin
+requirement. [`Integrations`](lib/redmine_mcp_plugin/integrations.rb) reports
+checklists only when the `Checklist` constant and the `Issue#checklists`
+association both exist (the RedmineUP Checklists plugin, the same signal
+`redmine_agile` uses). It reports issue tags only when `additional_tags` is
+loaded and issue tags are enabled.
+
+While an integration is absent, its tools are left out of
+[`Registry.all`](lib/redmine_mcp_plugin/registry.rb), its arguments are left out
+of `create_issue` and `search_issues` schemas, and `get_issue` does not emit the
+corresponding key. A loaded integration still hides the data from a caller who
+lacks `view_checklists` or `view_issue_tags`, including checklist and `tag_list`
+journal details. Writes use the plugin permissions (`edit_checklists`,
+`done_checklists`, `edit_issue_tags`, `create_issue_tags`) and the same
+visibility-then-permission checks as the core tools. OAuth advertises the extra
+read scopes only while the integration is active; the write scopes follow the
+registered write tools.
+
 ## Security invariants
 
 These invariants span components and must remain true when any layer changes.

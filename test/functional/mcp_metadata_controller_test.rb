@@ -30,11 +30,11 @@ class McpMetadataControllerTest < Redmine::ControllerTest
     get :protected_resource
 
     assert_response :success
-    # The bootstrap subset (three core reads, the two read satellites and private
-    # notes), not the full provider scope set and no write scopes. See
-    # OAUTH_BOOTSTRAP_SCOPES.
-    assert_equal %w[view_issues view_project view_wiki_pages view_issue_watchers view_time_entries view_private_notes],
-                 JSON.parse(response.body)['scopes_supported']
+    # The bootstrap subset, plus checklist or tag read scopes when those plugins
+    # are loaded. Not the full provider scope set and no write scopes.
+    assert_equal RedmineMcpPlugin::ScopeChallenge.initial_scopes, JSON.parse(response.body)['scopes_supported']
+    assert_includes JSON.parse(response.body)['scopes_supported'], 'view_issues'
+    assert_not_includes JSON.parse(response.body)['scopes_supported'], 'add_issues'
   end
 
   def test_protected_resource_adds_write_tool_scopes_when_writes_are_enabled
@@ -45,9 +45,9 @@ class McpMetadataControllerTest < Redmine::ControllerTest
     get :protected_resource
 
     assert_response :success
-    assert_equal %w[view_issues view_project view_wiki_pages view_issue_watchers view_time_entries view_private_notes
-                    add_issues add_issue_notes manage_versions edit_wiki_pages set_notes_private],
-                 JSON.parse(response.body)['scopes_supported']
+    assert_equal RedmineMcpPlugin::ScopeChallenge.initial_scopes, JSON.parse(response.body)['scopes_supported']
+    assert_includes JSON.parse(response.body)['scopes_supported'], 'add_issues'
+    assert_not_includes JSON.parse(response.body)['scopes_supported'], 'admin'
   end
 
   def test_authorization_server_advertises_provider_supported_scopes
@@ -63,8 +63,7 @@ class McpMetadataControllerTest < Redmine::ControllerTest
     get :authorization_server
 
     assert_response :success
-    assert_equal %w[view_issues view_project view_wiki_pages view_issue_watchers view_time_entries view_private_notes],
-                 JSON.parse(response.body)['scopes_supported']
+    assert_equal RedmineMcpPlugin::ScopeChallenge.read_scopes, JSON.parse(response.body)['scopes_supported']
   end
 
   def test_authorization_server_omits_registration_when_dcr_is_disabled

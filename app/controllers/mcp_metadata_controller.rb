@@ -73,7 +73,7 @@ class McpMetadataController < ApplicationController
   end
 
   def bootstrap_scopes
-    RedmineMcpPlugin::OAUTH_BOOTSTRAP_SCOPES
+    RedmineMcpPlugin::ScopeChallenge.read_scopes
   end
 
   # Doorkeeper 5.x installations expose either .config or .configuration.
