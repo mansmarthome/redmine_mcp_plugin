@@ -309,6 +309,24 @@ class McpControllerTest < Redmine::ControllerTest
     )
   end
 
+  def test_parent_assignment_challenge_includes_manage_subtasks
+    enable_mcp('read_only' => '0')
+    User.find(2).roles.each { |role| role.add_permission!(:add_issues, :manage_subtasks) }
+    oauth = oauth_headers(User.find(2), scopes: 'add_issues view_issues')
+
+    post_mcp rpc('tools/call', { 'name' => 'create_issue',
+                                 'arguments' => { 'project' => 'ecookbook', 'subject' => 'x',
+                                                  'parent_id' => 1 } }), oauth
+
+    assert_response :forbidden
+    assert_equal(
+      'Bearer error="insufficient_scope", scope="add_issues add_issue_notes manage_subtasks", ' \
+      'resource_metadata="http://test.host/.well-known/oauth-protected-resource/mcp", ' \
+      'error_description="The access token lacks the scope required for this operation"',
+      response.headers['WWW-Authenticate']
+    )
+  end
+
   def test_private_issue_note_challenge_includes_every_required_scope
     enable_mcp('read_only' => '0')
     oauth = oauth_headers(User.find(2), scopes: 'add_issue_notes')

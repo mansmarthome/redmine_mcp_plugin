@@ -102,6 +102,13 @@ class RedmineMcpPluginScopeChallengeTest < ActiveSupport::TestCase
     with_mcp_settings('read_only' => '0') do
       assert_includes Challenge.initial_scopes, 'view_private_notes'
       assert_includes Challenge.initial_scopes, 'set_notes_private'
+      assert_includes Challenge.initial_scopes, 'manage_subtasks'
+    end
+  end
+
+  def test_initial_scopes_omit_manage_subtasks_while_read_only
+    with_mcp_settings('read_only' => '1') do
+      assert_not_includes Challenge.initial_scopes, 'manage_subtasks'
     end
   end
 
@@ -134,6 +141,7 @@ class RedmineMcpPluginScopeChallengeTest < ActiveSupport::TestCase
     end
     scopes << 'edit_issue_tags' if RedmineMcpPlugin::Integrations.issue_tags?
     scopes << 'set_notes_private'
+    scopes << 'manage_subtasks'
     scopes << 'create_issue_tags' if RedmineMcpPlugin::Integrations.issue_tags?
     scopes
   end

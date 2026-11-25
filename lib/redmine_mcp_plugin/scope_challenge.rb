@@ -29,6 +29,7 @@ module RedmineMcpPlugin
 
       admin: :write,
       add_issues: :write,
+      manage_subtasks: :write,
       add_issue_notes: :write,
       set_notes_private: :write,
       manage_versions: :write,
@@ -64,11 +65,11 @@ module RedmineMcpPlugin
     }.freeze
 
     # Write permissions some write tools need only for certain arguments (a
-    # private note through add_issue_note), so they cannot be derived from
-    # mcp_permission. They are requested up front with the write tools: private
-    # notes are routine on a ticket, and the user's role still decides whether
-    # they can set one.
-    INITIAL_WRITE_EXTRAS = %i[set_notes_private].freeze
+    # private note through add_issue_note, a parent through create_issue), so
+    # they cannot be derived from mcp_permission. They are requested up front
+    # with the write tools: private notes and subtasks are routine on a ticket,
+    # and the user's role still decides whether they can set one.
+    INITIAL_WRITE_EXTRAS = %i[set_notes_private manage_subtasks].freeze
 
     module_function
 

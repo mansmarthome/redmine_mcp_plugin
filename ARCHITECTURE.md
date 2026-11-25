@@ -333,9 +333,10 @@ request. The authoritative correlation map and challenge format live in
 prevents a read challenge from introducing write authority. The client can union
 the challenged scopes with its current grant, re-authorize, and retry. Not every
 client does, so with read-only mode off the initial challenge and
-protected-resource metadata already include the write tools' scopes and
-`set_notes_private` (`ScopeChallenge.initial_scopes`); only `admin` relies on
-step-up. `view_private_notes` is a bootstrap read scope in both modes.
+protected-resource metadata already include the write tools' scopes plus
+`set_notes_private` and `manage_subtasks` (`ScopeChallenge.initial_scopes`);
+only `admin` relies on step-up. `view_private_notes` is a bootstrap read scope
+in both modes.
 
 Tool execution still uses `User#allowed_to?` with the restored scopes as a
 backstop and therefore intersects Redmine role permissions with the token's

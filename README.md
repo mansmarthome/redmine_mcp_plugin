@@ -112,7 +112,7 @@ as the read bootstrap scopes for an initial client handshake. When RedmineUP
 Checklists or additional_tags issue tags are available, that handshake also
 advertises `view_checklists` or `view_issue_tags`. When read-only mode
 is off, they also advertise the write scopes
-(`add_issues add_issue_notes manage_versions edit_wiki_pages set_notes_private`),
+(`add_issues add_issue_notes manage_versions edit_wiki_pages set_notes_private manage_subtasks`),
 so clients that never act on a step-up challenge, such as claude.ai connectors,
 still receive a write-capable token. Loaded checklist and tag write tools add
 their permissions to that set, and `create_issue_tags` is included when issue
@@ -151,7 +151,7 @@ token scopes; tools denied by the user's role remain hidden.
 | Wiki pages | `list_wiki_pages`, `get_wiki_page` | `view_wiki_pages` |
 | Metadata | `list_enumerations` | None |
 | Users | `list_users` | Filtered by Redmine principal visibility |
-| Create an issue | `create_issue` | `add_issues`; read-only mode must be disabled |
+| Create an issue | `create_issue` | `add_issues`; `parent_id` also requires `manage_subtasks`; read-only mode must be disabled |
 | Add an issue note | `add_issue_note` | `add_issue_notes`; private notes also require `set_notes_private`; read-only mode must be disabled |
 
 Checklist and tag tools are omitted from `tools/list` unless the host has that

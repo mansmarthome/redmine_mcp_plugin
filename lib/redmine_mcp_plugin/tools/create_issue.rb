@@ -47,6 +47,7 @@ module RedmineMcpPlugin
 
       def self.required_permissions(arguments = {})
         permissions = super
+        permissions << :manage_subtasks if arguments['parent_id'].present?
         if Integrations.checklists? && Array(arguments['checklists']).any?
           permissions << :edit_checklists
         end
@@ -69,7 +70,10 @@ module RedmineMcpPlugin
           'description' => { 'type' => 'string' },
           'tracker' => { 'type' => 'string', 'description' => 'Tracker name. Defaults to the project default.' },
           'priority' => { 'type' => 'string', 'description' => 'Priority name. Defaults to the Redmine default.' },
-          'assigned_to' => { 'type' => 'string', 'description' => 'Login of the user to assign to.' }
+          'assigned_to' => { 'type' => 'string', 'description' => 'Login of the user to assign to.' },
+          'parent_id' => { 'type' => 'integer', 'minimum' => 1,
+                           'description' => 'Id of the parent issue. Requires manage_subtasks. The parent ' \
+                                            'must be visible and a valid parent for this project.' }
         },
         'required' => %w[project subject],
         'additionalProperties' => false
@@ -106,7 +110,14 @@ module RedmineMcpPlugin
           attributes['assigned_to_id'] = assignee.id
         end
 
-        issue.safe_attributes = attributes
+        parent = resolve_parent(project, arguments)
+        # parent_issue_id, not the parent_id column: safe_attributes, the nested
+        # set, and core's parent validations only honor the virtual attribute.
+        # Pass the authenticated user. The default is User.current, and without
+        # manage_subtasks safe_attributes drops the parent instead of refusing.
+        attributes['parent_issue_id'] = parent.id if parent
+        issue.safe_attributes = attributes, user
+        reject_unassigned_parent(issue, parent) if parent
         assign_checklists(issue, project, arguments)
         assign_tags(issue, project, arguments)
         raise ToolError, "Could not create issue: #{issue.errors.full_messages.join('; ')}" unless issue.save
@@ -118,7 +129,8 @@ module RedmineMcpPlugin
         issue.reload
 
         payload = { id: issue.id, subject: issue.subject, project_identifier: project.identifier,
-                    status: issue.status&.name, tracker: issue.tracker&.name, created_on: iso(issue.created_on) }
+                    status: issue.status&.name, tracker: issue.tracker&.name, parent_id: issue.parent_id,
+                    created_on: iso(issue.created_on) }
         if Integrations.checklists? && arguments.key?('checklists') && user.allowed_to?(:view_checklists, project)
           payload[:checklists] = Integrations::Checklists.payload(issue)
         end
@@ -126,6 +138,40 @@ module RedmineMcpPlugin
           payload[:tags] = Integrations::IssueTags.names(issue)
         end
         payload
+      end
+
+      # Issue.visible honors roles but not a narrowed OAuth token, so visible?
+      # follows it. A missing parent and an invisible one share one error: a
+      # different message would confirm an id the caller cannot see.
+      def resolve_parent(project, arguments)
+        return unless arguments['parent_id'].present?
+
+        authorize!(:manage_subtasks, project)
+        parent_id = arguments['parent_id'].to_i
+        parent = Issue.visible(user).find_by(id: parent_id)
+        unless parent&.visible?(user)
+          raise ToolError, "No visible issue with id #{arguments['parent_id'].inspect}"
+        end
+
+        parent
+      end
+
+      # clear_disabled_fields nils a parent the tracker disallows, and core then
+      # saves a root issue. Refuse that, and refuse a parent the project settings
+      # or a closed parent would reject, before save.
+      def reject_unassigned_parent(issue, parent)
+        if issue.disabled_core_fields.include?('parent_issue_id')
+          raise ToolError, "Tracker #{issue.tracker&.name} does not allow a parent issue"
+        end
+        unless issue.valid_parent_project?(parent)
+          raise ToolError, "Issue #{parent.id} is not a valid parent for project #{issue.project.identifier}"
+        end
+        if parent.closed? && !issue.closed?
+          raise ToolError, "Cannot attach an open issue to closed issue #{parent.id}"
+        end
+        return if issue.parent_issue_id == parent.id
+
+        raise ToolError, "Could not assign parent issue #{parent.id}"
       end
 
       def assign_checklists(issue, project, arguments)
